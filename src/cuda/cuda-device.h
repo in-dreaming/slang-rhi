@@ -69,6 +69,13 @@ public:
         const size_t size,
         ITexture** outTexture
     ) override;
+    Result createTextureFromSharedHandle(
+        NativeHandle handle,
+        const TextureDesc& desc,
+        const size_t size,
+        bool isDedicated,
+        ITexture** outTexture
+    );
 
     virtual SLANG_NO_THROW Result SLANG_MCALL createTextureView(
         ITexture* texture,
