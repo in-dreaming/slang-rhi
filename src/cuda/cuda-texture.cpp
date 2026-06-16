@@ -152,6 +152,10 @@ TextureImpl::~TextureImpl()
     {
         SLANG_CUDA_ASSERT_ON_FAIL(cuMipmappedArrayDestroy(m_cudaMipMappedArray));
     }
+    if (m_cudaExternalMemory)
+    {
+        SLANG_CUDA_ASSERT_ON_FAIL(cuDestroyExternalMemory((CUexternalMemory)m_cudaExternalMemory));
+    }
 }
 
 void TextureImpl::deleteThis()
@@ -507,7 +511,7 @@ Result DeviceImpl::createTextureFromSharedHandle(
     NativeHandle handle,
     const TextureDesc& desc,
     const size_t size,
-    bool isDedicated,
+    bool is_dedicated,
     ITexture** outTexture
 )
 {
@@ -538,7 +542,7 @@ Result DeviceImpl::createTextureFromSharedHandle(
     }
     externalMemoryHandleDesc.handle.win32.handle = (void*)handle.value;
     externalMemoryHandleDesc.size = size;
-    externalMemoryHandleDesc.flags = isDedicated ? CUDA_EXTERNAL_MEMORY_DEDICATED : 0;
+    externalMemoryHandleDesc.flags = is_dedicated ? CUDA_EXTERNAL_MEMORY_DEDICATED : 0;
 
     CUexternalMemory externalMemory;
     SLANG_CUDA_RETURN_ON_FAIL_REPORT(cuImportExternalMemory(&externalMemory, &externalMemoryHandleDesc), this);

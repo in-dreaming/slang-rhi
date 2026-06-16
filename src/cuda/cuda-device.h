@@ -73,7 +73,7 @@ public:
         NativeHandle handle,
         const TextureDesc& desc,
         const size_t size,
-        bool isDedicated,
+        bool is_dedicated,
         ITexture** outTexture
     );
 

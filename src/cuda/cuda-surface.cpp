@@ -670,6 +670,10 @@ void SurfaceImpl::destroyFrameData(FrameData& frameData)
     {
         m_api.vkDestroySemaphore(m_device, frameData.renderFinishedSemaphore, nullptr);
     }
+    if (frameData.cudaSemaphore)
+    {
+        SLANG_CUDA_ASSERT_ON_FAIL(cuDestroyExternalSemaphore(frameData.cudaSemaphore));
+    }
     if (frameData.sharedSemaphore)
     {
         if (frameData.sharedSemaphoreHandle.value)

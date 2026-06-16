@@ -11,6 +11,8 @@ BufferImpl::BufferImpl(Device* device, const BufferDesc& desc)
 
 BufferImpl::~BufferImpl()
 {
+    SLANG_CUDA_CTX_SCOPE(getDevice<DeviceImpl>());
+
     if (m_alloc)
     {
         if (m_desc.memoryType == MemoryType::DeviceLocal)
@@ -21,6 +23,10 @@ BufferImpl::~BufferImpl()
         {
             getDevice<DeviceImpl>()->m_hostMemHeap->free(m_alloc);
         }
+    }
+    if (m_cudaExternalMemory)
+    {
+        SLANG_CUDA_ASSERT_ON_FAIL(cuDestroyExternalMemory((CUexternalMemory)m_cudaExternalMemory));
     }
 }
 
