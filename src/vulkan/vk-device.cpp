@@ -13,6 +13,7 @@
 #include "vk-shader-table.h"
 #include "vk-input-layout.h"
 #include "vk-acceleration-structure.h"
+#include "vk-heap.h"
 #include "vk-utils.h"
 
 #include "aftermath.h"
@@ -25,6 +26,7 @@
 #include "core/platform.h"
 
 #include <algorithm>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -151,6 +153,14 @@ DeviceImpl::~DeviceImpl()
     {
         m_queue->waitOnHost();
     }
+    if (m_computeQueue && m_computeQueue != m_queue)
+    {
+        m_computeQueue->waitOnHost();
+    }
+    if (m_transferQueue && m_transferQueue != m_queue && m_transferQueue != m_computeQueue)
+    {
+        m_transferQueue->waitOnHost();
+    }
 
     // Check the device queue is valid else, we can't wait on it..
     if (m_deviceQueue.isValid())
@@ -174,6 +184,16 @@ DeviceImpl::~DeviceImpl()
     {
         m_queue->shutdown();
         m_queue.setNull();
+    }
+    if (m_computeQueue && m_computeQueue != m_queue)
+    {
+        m_computeQueue->shutdown();
+        m_computeQueue.setNull();
+    }
+    if (m_transferQueue && m_transferQueue != m_queue && m_transferQueue != m_computeQueue)
+    {
+        m_transferQueue->shutdown();
+        m_transferQueue.setNull();
     }
     m_deviceQueue.destroy();
 
@@ -1280,9 +1300,31 @@ Result DeviceImpl::initVulkanDevice(
         availableCapabilities.push_back(Capability::_spirv_1_6);
     }
 
-    int queueFamilyIndex = m_api.findQueue(VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
-    SLANG_RHI_ASSERT(queueFamilyIndex >= 0);
-    m_queueFamilyIndex = queueFamilyIndex;
+    int graphicsQueueFamilyIndex = m_api.findQueue(VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
+    SLANG_RHI_ASSERT(graphicsQueueFamilyIndex >= 0);
+    m_queueFamilyIndex = (uint32_t)graphicsQueueFamilyIndex;
+
+    int computeQueueFamilyIndex = m_api.findQueueFamily(VK_QUEUE_COMPUTE_BIT, VK_QUEUE_GRAPHICS_BIT);
+    if (computeQueueFamilyIndex < 0)
+        computeQueueFamilyIndex = m_api.findQueue(VK_QUEUE_COMPUTE_BIT);
+    SLANG_RHI_ASSERT(computeQueueFamilyIndex >= 0);
+    m_computeQueueFamilyIndex = (uint32_t)computeQueueFamilyIndex;
+
+    int transferQueueFamilyIndex =
+        m_api.findQueueFamily(VK_QUEUE_TRANSFER_BIT, VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
+    if (transferQueueFamilyIndex < 0)
+        transferQueueFamilyIndex = m_api.findQueue(VK_QUEUE_TRANSFER_BIT);
+    SLANG_RHI_ASSERT(transferQueueFamilyIndex >= 0);
+    m_transferQueueFamilyIndex = (uint32_t)transferQueueFamilyIndex;
+
+    std::map<uint32_t, uint32_t> queueCountByFamily;
+    auto requestQueue = [&](uint32_t familyIndex, uint32_t& outQueueIndex)
+    {
+        outQueueIndex = queueCountByFamily[familyIndex]++;
+    };
+    requestQueue(m_queueFamilyIndex, m_graphicsQueueIndex);
+    requestQueue(m_computeQueueFamilyIndex, m_computeQueueIndex);
+    requestQueue(m_transferQueueFamilyIndex, m_transferQueueIndex);
 
 #if SLANG_RHI_ENABLE_AFTERMATH
     VkDeviceDiagnosticsConfigCreateInfoNV aftermathInfo = {};
@@ -1323,13 +1365,22 @@ Result DeviceImpl::initVulkanDevice(
     // Create Vulkan device.
     if (!desc.existingDeviceHandles.handles[2])
     {
-        float queuePriority = 0.0f;
-        VkDeviceQueueCreateInfo queueCreateInfo = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
-        queueCreateInfo.queueFamilyIndex = m_queueFamilyIndex;
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        std::vector<std::vector<float>> queuePriorities;
+        queueCreateInfos.reserve(queueCountByFamily.size());
+        queuePriorities.reserve(queueCountByFamily.size());
+        for (const auto& entry : queueCountByFamily)
+        {
+            queuePriorities.emplace_back(entry.second, 0.0f);
+            VkDeviceQueueCreateInfo queueCreateInfo = {VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
+            queueCreateInfo.queueFamilyIndex = entry.first;
+            queueCreateInfo.queueCount = entry.second;
+            queueCreateInfo.pQueuePriorities = queuePriorities.back().data();
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
-        deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+        deviceCreateInfo.queueCreateInfoCount = uint32_t(queueCreateInfos.size());
+        deviceCreateInfo.pQueueCreateInfos = queueCreateInfos.data();
 
         // Add user-provided device extensions, skipping duplicates.
         if (extendedDesc && extendedDesc->deviceExtensionCount > 0)
@@ -1711,13 +1762,43 @@ Result DeviceImpl::initialize(const DeviceDesc& desc, BackendImpl* backend)
 
     {
         VkQueue queue;
-        m_api.vkGetDeviceQueue(m_device, m_queueFamilyIndex, 0, &queue);
+        m_api.vkGetDeviceQueue(m_device, m_queueFamilyIndex, m_graphicsQueueIndex, &queue);
         SLANG_RETURN_ON_FAIL(m_deviceQueue.init(m_api, queue, m_queueFamilyIndex));
     }
 
     m_queue = new CommandQueueImpl(this, QueueType::Graphics);
     m_queue->init(m_deviceQueue.getQueue(), m_queueFamilyIndex);
     m_queue->setInternalReferenceCount(1);
+
+    if (!m_existingDeviceHandles.handles[2])
+    {
+        VkQueue computeQueue = VK_NULL_HANDLE;
+        m_api.vkGetDeviceQueue(
+            m_device,
+            m_computeQueueFamilyIndex,
+            m_computeQueueIndex,
+            &computeQueue
+        );
+        m_computeQueue = new CommandQueueImpl(this, QueueType::Compute);
+        m_computeQueue->init(computeQueue, m_computeQueueFamilyIndex);
+        m_computeQueue->setInternalReferenceCount(1);
+
+        VkQueue transferQueue = VK_NULL_HANDLE;
+        m_api.vkGetDeviceQueue(
+            m_device,
+            m_transferQueueFamilyIndex,
+            m_transferQueueIndex,
+            &transferQueue
+        );
+        m_transferQueue = new CommandQueueImpl(this, QueueType::Transfer);
+        m_transferQueue->init(transferQueue, m_transferQueueFamilyIndex);
+        m_transferQueue->setInternalReferenceCount(1);
+    }
+    else
+    {
+        m_computeQueue = m_queue;
+        m_transferQueue = m_queue;
+    }
 
     SLANG_RETURN_ON_FAIL(checkRequiredFeatures(desc));
 
@@ -1731,12 +1812,20 @@ void DeviceImpl::waitForGpu()
 
 Result DeviceImpl::getQueue(QueueType type, ICommandQueue** outQueue)
 {
-    if (type != QueueType::Graphics)
+    switch (type)
     {
+    case QueueType::Graphics:
+        returnComPtr(outQueue, m_queue);
+        return SLANG_OK;
+    case QueueType::Compute:
+        returnComPtr(outQueue, m_computeQueue ? m_computeQueue : m_queue);
+        return SLANG_OK;
+    case QueueType::Transfer:
+        returnComPtr(outQueue, m_transferQueue ? m_transferQueue : m_queue);
+        return SLANG_OK;
+    default:
         return SLANG_E_INVALID_ARG;
     }
-    returnComPtr(outQueue, m_queue);
-    return SLANG_OK;
 }
 
 Result DeviceImpl::readBuffer(IBuffer* buffer, Offset offset, Size size, void* outData)
@@ -1953,6 +2042,10 @@ uint32_t DeviceImpl::getQueueFamilyIndex(QueueType queueType)
 {
     switch (queueType)
     {
+    case QueueType::Compute:
+        return m_computeQueueFamilyIndex;
+    case QueueType::Transfer:
+        return m_transferQueueFamilyIndex;
     case QueueType::Graphics:
     default:
         return m_queueFamilyIndex;

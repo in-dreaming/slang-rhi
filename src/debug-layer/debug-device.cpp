@@ -1390,6 +1390,31 @@ Result DebugDevice::createHeap(const HeapDesc& desc, IHeap** outHeap)
     return SLANG_OK;
 }
 
+Result DebugDevice::createBufferFromHeapAllocation(
+    IHeap* heap,
+    const HeapAlloc& allocation,
+    const BufferDesc& desc,
+    IBuffer** outBuffer
+)
+{
+    SLANG_RHI_DEBUG_API(IDevice, createBufferFromHeapAllocation);
+
+    validateCudaContext();
+
+    if (!heap)
+    {
+        RHI_VALIDATION_ERROR("'heap' must not be null.");
+        return SLANG_E_INVALID_ARG;
+    }
+    if (!outBuffer)
+    {
+        RHI_VALIDATION_ERROR("'outBuffer' must not be null.");
+        return SLANG_E_INVALID_ARG;
+    }
+
+    return baseObject->createBufferFromHeapAllocation(heap, allocation, desc, outBuffer);
+}
+
 Result DebugDevice::getTextureAllocationInfo(const TextureDesc& desc, size_t* outSize, size_t* outAlignment)
 {
     SLANG_RHI_DEBUG_API(IDevice, getTextureAllocationInfo);

@@ -245,6 +245,11 @@ int VulkanApi::findMemoryTypeIndex(uint32_t typeBits, VkMemoryPropertyFlags prop
 
 int VulkanApi::findQueue(VkQueueFlags reqFlags) const
 {
+    return findQueueFamily(reqFlags, 0);
+}
+
+int VulkanApi::findQueueFamily(VkQueueFlags requiredFlags, VkQueueFlags preferExcludeFlags) const
+{
     SLANG_RHI_ASSERT(m_physicalDevice != VK_NULL_HANDLE);
 
     uint32_t numQueueFamilies = 0;
@@ -254,16 +259,19 @@ int VulkanApi::findQueue(VkQueueFlags reqFlags) const
     queueFamilies.resize(numQueueFamilies);
     vkGetPhysicalDeviceQueueFamilyProperties(m_physicalDevice, &numQueueFamilies, queueFamilies.data());
 
-    // Find a queue that can service our needs
+    int fallback = -1;
     for (int i = 0; i < int(numQueueFamilies); ++i)
     {
-        if ((queueFamilies[i].queueFlags & reqFlags) == reqFlags)
-        {
+        const VkQueueFlags flags = queueFamilies[i].queueFlags;
+        if ((flags & requiredFlags) != requiredFlags)
+            continue;
+        if ((flags & preferExcludeFlags) == 0)
             return i;
-        }
+        if (fallback < 0)
+            fallback = i;
     }
 
-    return -1;
+    return fallback;
 }
 
 } // namespace rhi::vk

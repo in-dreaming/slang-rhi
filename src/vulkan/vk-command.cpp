@@ -210,8 +210,8 @@ void CommandRecorder::cmdCopyBuffer(const commands::CopyBuffer& cmd)
     commitBarriers();
 
     VkBufferCopy copyRegion;
-    copyRegion.dstOffset = cmd.dstOffset;
-    copyRegion.srcOffset = cmd.srcOffset;
+    copyRegion.dstOffset = cmd.dstOffset + dst->m_heapBaseOffset;
+    copyRegion.srcOffset = cmd.srcOffset + src->m_heapBaseOffset;
     copyRegion.size = cmd.size;
 
     m_api.vkCmdCopyBuffer(m_cmdBuffer, src->m_buffer.m_buffer, dst->m_buffer.m_buffer, 1, &copyRegion);

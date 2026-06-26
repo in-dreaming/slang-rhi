@@ -1230,12 +1230,20 @@ Result DeviceImpl::initialize(const DeviceDesc& desc, BackendImpl* backend)
         std::array{slang::PreprocessorMacroDesc{"__D3D12__", "1"}}
     ));
 
-    // Create queue.
+    // Create queues.
     m_queue = new CommandQueueImpl(this, QueueType::Graphics);
     SLANG_RETURN_ON_FAIL(m_queue->init(0));
     m_queue->setInternalReferenceCount(1);
 
-    // Retrieve timestamp frequency.
+    m_computeQueue = new CommandQueueImpl(this, QueueType::Compute);
+    SLANG_RETURN_ON_FAIL(m_computeQueue->init(0));
+    m_computeQueue->setInternalReferenceCount(1);
+
+    m_transferQueue = new CommandQueueImpl(this, QueueType::Transfer);
+    SLANG_RETURN_ON_FAIL(m_transferQueue->init(0));
+    m_transferQueue->setInternalReferenceCount(1);
+
+    // Retrieve timestamp frequency from the graphics queue.
     m_queue->m_d3dQueue->GetTimestampFrequency(&m_info.timestampFrequency);
 
     // Initialize bindless descriptor set if supported.
@@ -1261,12 +1269,20 @@ Result DeviceImpl::getNativeDeviceHandles(DeviceNativeHandles* outHandles)
 
 Result DeviceImpl::getQueue(QueueType type, ICommandQueue** outQueue)
 {
-    if (type != QueueType::Graphics)
+    switch (type)
     {
+    case QueueType::Graphics:
+        returnComPtr(outQueue, m_queue);
+        return SLANG_OK;
+    case QueueType::Compute:
+        returnComPtr(outQueue, m_computeQueue);
+        return SLANG_OK;
+    case QueueType::Transfer:
+        returnComPtr(outQueue, m_transferQueue);
+        return SLANG_OK;
+    default:
         return SLANG_E_INVALID_ARG;
     }
-    returnComPtr(outQueue, m_queue);
-    return SLANG_OK;
 }
 
 Result DeviceImpl::createSurface(WindowHandle windowHandle, ISurface** outSurface)
@@ -2251,6 +2267,16 @@ DeviceImpl::~DeviceImpl()
     {
         m_queue->shutdown();
         m_queue.setNull();
+    }
+    if (m_computeQueue)
+    {
+        m_computeQueue->shutdown();
+        m_computeQueue.setNull();
+    }
+    if (m_transferQueue)
+    {
+        m_transferQueue->shutdown();
+        m_transferQueue.setNull();
     }
 
     m_bindlessDescriptorSet.setNull();

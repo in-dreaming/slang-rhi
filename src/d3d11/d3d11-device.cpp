@@ -601,12 +601,16 @@ Result DeviceImpl::readBuffer(IBuffer* buffer, Offset offset, Size size, void* o
 
 Result DeviceImpl::getQueue(QueueType type, ICommandQueue** outQueue)
 {
-    if (type != QueueType::Graphics)
+    switch (type)
     {
+    case QueueType::Graphics:
+    case QueueType::Compute:
+    case QueueType::Transfer:
+        returnComPtr(outQueue, m_queue);
+        return SLANG_OK;
+    default:
         return SLANG_E_INVALID_ARG;
     }
-    returnComPtr(outQueue, m_queue);
-    return SLANG_OK;
 }
 
 Result DeviceImpl::getTextureRowAlignment(Format format, Size* outAlignment)

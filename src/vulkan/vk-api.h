@@ -580,6 +580,9 @@ struct VulkanApi
     /// Given queue required flags, finds a queue
     int findQueue(VkQueueFlags reqFlags) const;
 
+    /// Finds a queue family matching required flags, preferring families without excluded flags.
+    int findQueueFamily(VkQueueFlags requiredFlags, VkQueueFlags preferExcludeFlags = 0) const;
+
     /// Module this was all loaded from.
     const VulkanModule* m_module = nullptr;
     VkInstance m_instance = VK_NULL_HANDLE;

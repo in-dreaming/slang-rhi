@@ -27,6 +27,8 @@ public:
 
     ~VKBufferHandleRAII()
     {
+        if (!m_ownsResources || !m_api)
+            return;
         if (m_api)
         {
             m_api->vkDestroyBuffer(m_api->m_device, m_buffer, nullptr);
@@ -34,9 +36,18 @@ public:
         }
     }
 
+    void adoptExternal(const VulkanApi* api, VkBuffer buffer, VkDeviceMemory memory)
+    {
+        m_api = api;
+        m_buffer = buffer;
+        m_memory = memory;
+        m_ownsResources = false;
+    }
+
     VkBuffer m_buffer;
     VkDeviceMemory m_memory;
     const VulkanApi* m_api;
+    bool m_ownsResources = true;
 };
 
 class BufferImpl : public Buffer
@@ -64,6 +75,7 @@ public:
     VKBufferHandleRAII m_buffer;
     VKBufferHandleRAII m_uploadBuffer;
     DeviceAddress m_deviceAddress = 0;
+    uint64_t m_heapBaseOffset = 0;
 
     struct ViewKey
     {

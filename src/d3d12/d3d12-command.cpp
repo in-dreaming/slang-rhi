@@ -21,6 +21,8 @@
 
 namespace rhi::d3d12 {
 
+static D3D12_COMMAND_LIST_TYPE getD3D12CommandListType(QueueType type);
+
 template<typename T>
 inline bool arraysEqual(uint32_t countA, uint32_t countB, const T* a, const T* b)
 {
@@ -64,6 +66,7 @@ public:
     UINT64 m_rayGenRecordStride = 0;
 
     BindingDataImpl* m_bindingData = nullptr;
+    bool m_isCopyCommandList = false;
 
 #if SLANG_RHI_ENABLE_AFTERMATH
     GFSDK_Aftermath_ContextHandle m_aftermathContext = nullptr;
@@ -147,8 +150,18 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList1>(m_cmdList1.writeRef());
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList4>(m_cmdList4.writeRef());
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList6>(m_cmdList6.writeRef());
-    m_cbvSrvUavArena = &commandBuffer->m_cbvSrvUavArena;
-    m_samplerArena = &commandBuffer->m_samplerArena;
+    m_isCopyCommandList =
+        getD3D12CommandListType(commandBuffer->m_queue->m_type) == D3D12_COMMAND_LIST_TYPE_COPY;
+    if (!m_isCopyCommandList)
+    {
+        m_cbvSrvUavArena = &commandBuffer->m_cbvSrvUavArena;
+        m_samplerArena = &commandBuffer->m_samplerArena;
+    }
+    else
+    {
+        m_cbvSrvUavArena = nullptr;
+        m_samplerArena = nullptr;
+    }
 
 #if SLANG_RHI_ENABLE_AFTERMATH
     // Enable aftermath marker tracking if aftermath is enabled.
@@ -176,9 +189,12 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
 #undef SLANG_RHI_COMMAND_EXECUTE_X
     }
 
-    // Transition all resources back to their default states.
-    m_stateTracking.requireDefaultStates();
-    commitBarriers();
+    // COPY command lists only support copy states and UAV barriers.
+    if (!m_isCopyCommandList)
+    {
+        m_stateTracking.requireDefaultStates();
+        commitBarriers();
+    }
     m_stateTracking.clear();
 
     SLANG_D3D_RETURN_ON_FAIL_REPORT(m_cmdList->Close(), m_device);
@@ -1564,6 +1580,10 @@ void CommandRecorder::cmdSetTextureState(const commands::SetTextureState& cmd)
 
 void CommandRecorder::cmdGlobalBarrier(const commands::GlobalBarrier& cmd)
 {
+    (void)cmd;
+    if (m_isCopyCommandList)
+        return;
+
     // Global barrier on D3D12 is implemented with a UAV barrier pointing at null resource.
     // https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12
     // TODO: Look at using D3D12 advanced barriers when available, currently only experimental in agility sdk though.
@@ -1858,6 +1878,20 @@ void CommandRecorder::copyAccelerationStructureQueryResults(
 
 // CommandQueueImpl
 
+static D3D12_COMMAND_LIST_TYPE getD3D12CommandListType(QueueType type)
+{
+    switch (type)
+    {
+    case QueueType::Compute:
+        return D3D12_COMMAND_LIST_TYPE_COMPUTE;
+    case QueueType::Transfer:
+        return D3D12_COMMAND_LIST_TYPE_COPY;
+    case QueueType::Graphics:
+    default:
+        return D3D12_COMMAND_LIST_TYPE_DIRECT;
+    }
+}
+
 CommandQueueImpl::CommandQueueImpl(Device* device, QueueType type)
     : CommandQueue(device, type)
 {
@@ -1872,7 +1906,7 @@ Result CommandQueueImpl::init(uint32_t queueIndex)
     m_d3dDevice = device->m_device;
 
     D3D12_COMMAND_QUEUE_DESC queueDesc = {};
-    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queueDesc.Type = getD3D12CommandListType(m_type);
     SLANG_D3D_RETURN_ON_FAIL_REPORT(
         m_d3dDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(m_d3dQueue.writeRef())),
         m_device
@@ -2010,7 +2044,29 @@ Result CommandQueueImpl::submit(const SubmitDesc& desc)
     for (uint32_t i = 0; i < desc.waitFenceCount; ++i)
     {
         FenceImpl* fence = checked_cast<FenceImpl*>(desc.waitFences[i]);
-        SLANG_D3D_RETURN_ON_FAIL_REPORT(m_d3dQueue->Wait(fence->m_fence.get(), desc.waitFenceValues[i]), m_device);
+        if (!fence || !fence->m_fence)
+            return SLANG_E_INVALID_ARG;
+
+        if (m_type == QueueType::Graphics)
+        {
+            SLANG_D3D_RETURN_ON_FAIL_REPORT(
+                m_d3dQueue->Wait(fence->m_fence.get(), desc.waitFenceValues[i]),
+                m_device
+            );
+        }
+        else
+        {
+            uint64_t completed = fence->m_fence->GetCompletedValue();
+            if (completed < desc.waitFenceValues[i])
+            {
+                HANDLE event = fence->getWaitEvent();
+                SLANG_D3D_RETURN_ON_FAIL_REPORT(
+                    fence->m_fence->SetEventOnCompletion(desc.waitFenceValues[i], event),
+                    m_device
+                );
+                WaitForSingleObject(event, INFINITE);
+            }
+        }
     }
 
     // Execute command lists.
@@ -2143,6 +2199,9 @@ Result CommandEncoderImpl::init()
 
 Result CommandEncoderImpl::getBindingData(RootShaderObject* rootObject, BindingData*& outBindingData)
 {
+    if (getD3D12CommandListType(m_queue->m_type) == D3D12_COMMAND_LIST_TYPE_COPY)
+        return SLANG_E_NOT_AVAILABLE;
+
     rootObject->trackResources(m_commandBuffer->m_trackedObjects);
     BindingDataBuilder builder;
     builder.m_device = getDevice<DeviceImpl>();
@@ -2212,15 +2271,16 @@ CommandBufferImpl::~CommandBufferImpl()
 Result CommandBufferImpl::init()
 {
     DeviceImpl* device = getDevice<DeviceImpl>();
+    const D3D12_COMMAND_LIST_TYPE listType = getD3D12CommandListType(m_queue->m_type);
     SLANG_D3D_RETURN_ON_FAIL_REPORT(
         device->m_device
-            ->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(m_d3dCommandAllocator.writeRef())),
+            ->CreateCommandAllocator(listType, IID_PPV_ARGS(m_d3dCommandAllocator.writeRef())),
         device
     );
     SLANG_D3D_RETURN_ON_FAIL_REPORT(
         device->m_device->CreateCommandList(
             0,
-            D3D12_COMMAND_LIST_TYPE_DIRECT,
+            listType,
             m_d3dCommandAllocator,
             nullptr,
             IID_PPV_ARGS(m_d3dCommandList.writeRef())
@@ -2235,16 +2295,22 @@ Result CommandBufferImpl::init()
     }
 #endif
 
-    ID3D12DescriptorHeap* heaps[] = {
-        device->m_gpuCbvSrvUavHeap->getHeap(),
-        device->m_gpuSamplerHeap->getHeap(),
-    };
-    m_d3dCommandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
+    if (listType == D3D12_COMMAND_LIST_TYPE_DIRECT || listType == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+    {
+        ID3D12DescriptorHeap* heaps[] = {
+            device->m_gpuCbvSrvUavHeap->getHeap(),
+            device->m_gpuSamplerHeap->getHeap(),
+        };
+        m_d3dCommandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
+    }
 
     m_constantBufferPool.init(device);
 
-    SLANG_RETURN_ON_FAIL(m_cbvSrvUavArena.init(device->m_gpuCbvSrvUavHeap, 128));
-    SLANG_RETURN_ON_FAIL(m_samplerArena.init(device->m_gpuSamplerHeap, 4));
+    if (listType == D3D12_COMMAND_LIST_TYPE_DIRECT || listType == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+    {
+        SLANG_RETURN_ON_FAIL(m_cbvSrvUavArena.init(device->m_gpuCbvSrvUavHeap, 128));
+        SLANG_RETURN_ON_FAIL(m_samplerArena.init(device->m_gpuSamplerHeap, 4));
+    }
 
     return SLANG_OK;
 }
@@ -2252,18 +2318,22 @@ Result CommandBufferImpl::init()
 Result CommandBufferImpl::reset()
 {
     DeviceImpl* device = getDevice<DeviceImpl>();
+    const D3D12_COMMAND_LIST_TYPE listType = getD3D12CommandListType(m_queue->m_type);
     SLANG_D3D_RETURN_ON_FAIL_REPORT(m_d3dCommandAllocator->Reset(), device);
     SLANG_D3D_RETURN_ON_FAIL_REPORT(m_d3dCommandList->Reset(m_d3dCommandAllocator, nullptr), device);
-    ID3D12DescriptorHeap* heaps[] = {
-        device->m_gpuCbvSrvUavHeap->getHeap(),
-        device->m_gpuSamplerHeap->getHeap(),
-    };
-    m_d3dCommandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
+    if (listType == D3D12_COMMAND_LIST_TYPE_DIRECT || listType == D3D12_COMMAND_LIST_TYPE_COMPUTE)
+    {
+        ID3D12DescriptorHeap* heaps[] = {
+            device->m_gpuCbvSrvUavHeap->getHeap(),
+            device->m_gpuSamplerHeap->getHeap(),
+        };
+        m_d3dCommandList->SetDescriptorHeaps(SLANG_COUNT_OF(heaps), heaps);
 
-    m_cbvSrvUavArena.reset();
-    m_samplerArena.reset();
-    m_constantBufferPool.reset();
-    m_bindingCache.reset();
+        m_cbvSrvUavArena.reset();
+        m_samplerArena.reset();
+        m_constantBufferPool.reset();
+        m_bindingCache.reset();
+    }
     return CommandBuffer::reset();
 }
 

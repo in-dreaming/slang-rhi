@@ -2775,6 +2775,8 @@ public:
 enum class QueueType
 {
     Graphics,
+    Compute,
+    Transfer,
 };
 
 enum class CpuTimestampDomain
@@ -3702,6 +3704,14 @@ public:
 
     /// Create a graphics heap
     virtual SLANG_NO_THROW Result SLANG_MCALL createHeap(const HeapDesc& desc, IHeap** outHeap) = 0;
+
+    /// Create a buffer backed by a sub-allocation inside an existing heap page.
+    virtual SLANG_NO_THROW Result SLANG_MCALL createBufferFromHeapAllocation(
+        IHeap* heap,
+        const HeapAlloc& allocation,
+        const BufferDesc& desc,
+        IBuffer** outBuffer
+    ) = 0;
 
     virtual SLANG_NO_THROW Result SLANG_MCALL getTextureAllocationInfo(
         const TextureDesc& desc,

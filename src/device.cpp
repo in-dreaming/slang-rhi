@@ -865,6 +865,20 @@ Result Device::createHeap(const HeapDesc& desc, IHeap** outHeap)
     return SLANG_E_NOT_AVAILABLE;
 }
 
+Result Device::createBufferFromHeapAllocation(
+    IHeap* heap,
+    const HeapAlloc& allocation,
+    const BufferDesc& desc,
+    IBuffer** outBuffer
+)
+{
+    SLANG_UNUSED(heap);
+    SLANG_UNUSED(allocation);
+    SLANG_UNUSED(desc);
+    SLANG_UNUSED(outBuffer);
+    return SLANG_E_NOT_AVAILABLE;
+}
+
 Result Device::readTexture(
     ITexture* texture,
     uint32_t layer,

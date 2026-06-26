@@ -119,6 +119,13 @@ public:
 
     virtual SLANG_NO_THROW Result SLANG_MCALL createHeap(const HeapDesc& desc, IHeap** outHeap) override;
 
+    virtual SLANG_NO_THROW Result SLANG_MCALL createBufferFromHeapAllocation(
+        IHeap* heap,
+        const HeapAlloc& allocation,
+        const BufferDesc& desc,
+        IBuffer** outBuffer
+    ) override;
+
     virtual SLANG_NO_THROW Result SLANG_MCALL readBuffer(
         IBuffer* buffer,
         Offset offset,
@@ -248,6 +255,11 @@ public:
 
     VulkanDeviceQueue m_deviceQueue;
     uint32_t m_queueFamilyIndex;
+    uint32_t m_graphicsQueueIndex = 0;
+    uint32_t m_computeQueueFamilyIndex = 0;
+    uint32_t m_computeQueueIndex = 0;
+    uint32_t m_transferQueueFamilyIndex = 0;
+    uint32_t m_transferQueueIndex = 0;
 
     struct CooperativeMatrixFlexibleProperty
     {
@@ -265,6 +277,8 @@ public:
     std::vector<CooperativeMatrixDesc> m_cooperativeMatrixFixedProperties;
     std::vector<CooperativeMatrixFlexibleProperty> m_cooperativeMatrixFlexibleProperties;
     RefPtr<CommandQueueImpl> m_queue;
+    RefPtr<CommandQueueImpl> m_computeQueue;
+    RefPtr<CommandQueueImpl> m_transferQueue;
 
     DescriptorSetAllocator descriptorSetAllocator;
     RefPtr<BindlessDescriptorSet> m_bindlessDescriptorSet;

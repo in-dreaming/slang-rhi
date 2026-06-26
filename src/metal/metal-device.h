@@ -156,11 +156,15 @@ public:
     bool captureEnabled() const { return std::getenv("MTL_CAPTURE_ENABLED") != nullptr; }
 
     NS::SharedPtr<MTL::Device> m_device;
-    /// The single command queue. Device-level operations (readBuffer,
+    /// The graphics command queue. Device-level operations (readBuffer,
     /// createBuffer, createTexture) use m_queue->m_queueFence to participate
     /// in the fence chain. See synchronization model in metal-command.h.
     RefPtr<CommandQueueImpl> m_queue;
+    RefPtr<CommandQueueImpl> m_computeQueue;
+    RefPtr<CommandQueueImpl> m_transferQueue;
     NS::SharedPtr<MTL::CommandQueue> m_commandQueue;
+    NS::SharedPtr<MTL::CommandQueue> m_computeCommandQueue;
+    NS::SharedPtr<MTL::CommandQueue> m_transferCommandQueue;
     ClearEngine m_clearEngine;
 
     // Global registry of all acceleration structures.

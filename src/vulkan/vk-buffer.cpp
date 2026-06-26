@@ -1,5 +1,6 @@
 #include "vk-buffer.h"
 #include "vk-device.h"
+#include "vk-heap.h"
 #include "vk-utils.h"
 
 #if SLANG_WINDOWS_FAMILY
@@ -263,7 +264,7 @@ DeviceAddress BufferImpl::getDeviceAddress()
         m_deviceAddress = (DeviceAddress)api.vkGetBufferDeviceAddress(device->m_device, &info);
     }
 
-    return m_deviceAddress;
+    return m_deviceAddress + m_heapBaseOffset;
 }
 
 Result BufferImpl::getDescriptorHandle(
@@ -450,6 +451,33 @@ Result DeviceImpl::createBufferFromNativeHandle(NativeHandle handle, const Buffe
     {
         return SLANG_FAIL;
     }
+
+    returnComPtr(outBuffer, buffer);
+    return SLANG_OK;
+}
+
+Result DeviceImpl::createBufferFromHeapAllocation(
+    IHeap* heap,
+    const HeapAlloc& allocation,
+    const BufferDesc& desc_,
+    IBuffer** outBuffer
+)
+{
+    if (!heap || !allocation.isValid() || !outBuffer)
+        return SLANG_E_INVALID_ARG;
+
+    BufferDesc desc = fixupBufferDesc(desc_);
+    if (allocation.size < desc.size)
+        return SLANG_E_INVALID_ARG;
+
+    auto* page = static_cast<HeapImpl::PageImpl*>(allocation.pageId);
+    if (!page)
+        return SLANG_E_INVALID_ARG;
+
+    RefPtr<BufferImpl> buffer(new BufferImpl(this, desc));
+    buffer->m_heapBaseOffset = allocation.offset;
+    buffer->m_buffer.adoptExternal(&m_api, page->m_buffer.m_buffer, page->m_buffer.m_memory);
+    buffer->m_deviceAddress = allocation.getDeviceAddress();
 
     returnComPtr(outBuffer, buffer);
     return SLANG_OK;

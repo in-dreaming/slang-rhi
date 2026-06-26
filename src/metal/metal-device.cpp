@@ -34,16 +34,31 @@ DeviceImpl::~DeviceImpl()
     m_uploadHeap.release();
     m_readbackHeap.release();
 
+    if (m_computeQueue)
+    {
+        m_computeQueue->shutdown();
+        m_computeQueue.setNull();
+    }
+    if (m_transferQueue)
+    {
+        m_transferQueue->shutdown();
+        m_transferQueue.setNull();
+    }
     if (m_queue)
     {
         m_queue->shutdown();
         m_queue.setNull();
     }
 
-    if (m_commandQueue && m_residencySet)
-    {
-        m_commandQueue->removeResidencySet(m_residencySet.get());
-    }
+    auto removeResidencySet = [&](NS::SharedPtr<MTL::CommandQueue>& commandQueue) {
+        if (commandQueue && m_residencySet)
+        {
+            commandQueue->removeResidencySet(m_residencySet.get());
+        }
+    };
+    removeResidencySet(m_transferCommandQueue);
+    removeResidencySet(m_computeCommandQueue);
+    removeResidencySet(m_commandQueue);
 
     m_clearEngine.release();
 }
@@ -148,6 +163,33 @@ Result DeviceImpl::initialize(const DeviceDesc& desc, BackendImpl* backend)
     m_queue = new CommandQueueImpl(this, QueueType::Graphics);
     m_queue->init(m_commandQueue);
     m_queue->setInternalReferenceCount(1);
+
+    auto attachResidencySet = [&](NS::SharedPtr<MTL::CommandQueue>& commandQueue) {
+        if (m_hasResidencySet && commandQueue)
+        {
+            commandQueue->addResidencySet(m_residencySet.get());
+        }
+    };
+
+    m_computeCommandQueue = NS::TransferPtr(m_device->newCommandQueue(64));
+    if (!m_computeCommandQueue)
+    {
+        return SLANG_FAIL;
+    }
+    attachResidencySet(m_computeCommandQueue);
+    m_computeQueue = new CommandQueueImpl(this, QueueType::Compute);
+    m_computeQueue->init(m_computeCommandQueue);
+    m_computeQueue->setInternalReferenceCount(1);
+
+    m_transferCommandQueue = NS::TransferPtr(m_device->newCommandQueue(64));
+    if (!m_transferCommandQueue)
+    {
+        return SLANG_FAIL;
+    }
+    attachResidencySet(m_transferCommandQueue);
+    m_transferQueue = new CommandQueueImpl(this, QueueType::Transfer);
+    m_transferQueue->init(m_transferCommandQueue);
+    m_transferQueue->setInternalReferenceCount(1);
 
     // Setup capture manager.
     if (captureEnabled())
@@ -343,12 +385,20 @@ Result DeviceImpl::getQueue(QueueType type, ICommandQueue** outQueue)
 {
     AUTORELEASEPOOL
 
-    if (type != QueueType::Graphics)
+    switch (type)
     {
+    case QueueType::Graphics:
+        returnComPtr(outQueue, m_queue);
+        return SLANG_OK;
+    case QueueType::Compute:
+        returnComPtr(outQueue, m_computeQueue ? m_computeQueue : m_queue);
+        return SLANG_OK;
+    case QueueType::Transfer:
+        returnComPtr(outQueue, m_transferQueue ? m_transferQueue : m_queue);
+        return SLANG_OK;
+    default:
         return SLANG_E_INVALID_ARG;
     }
-    returnComPtr(outQueue, m_queue);
-    return SLANG_OK;
 }
 
 Result DeviceImpl::readBuffer(IBuffer* buffer, Offset offset, Size size, void* outData)
