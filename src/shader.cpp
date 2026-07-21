@@ -1,5 +1,6 @@
 #include "shader.h"
 
+#include "core/blob.h"
 #include "rhi-shared.h"
 
 namespace rhi {
@@ -23,6 +24,23 @@ ShaderProgram::ShaderProgram(Device* device, const ShaderProgramDesc& desc)
 {
     m_descHolder.holdString(m_desc.label);
     m_descHolder.holdList(m_desc.slangEntryPoints, m_desc.slangEntryPointCount);
+    if (m_desc.precompiledEntryPointCode && m_desc.precompiledEntryPointCodeCount)
+    {
+        m_precompiledCodeStorage.reserve(m_desc.precompiledEntryPointCodeCount);
+        m_precompiledCode.reserve(m_desc.precompiledEntryPointCodeCount);
+        for (uint32_t i = 0; i < m_desc.precompiledEntryPointCodeCount; ++i)
+        {
+            const auto& source = m_desc.precompiledEntryPointCode[i];
+            const auto* begin = static_cast<const uint8_t*>(source.data);
+            if (begin && source.size)
+                m_precompiledCodeStorage.emplace_back(begin, begin + source.size);
+            else
+                m_precompiledCodeStorage.emplace_back();
+            const auto& owned = m_precompiledCodeStorage.back();
+            m_precompiledCode.push_back({owned.data(), owned.size()});
+        }
+        m_desc.precompiledEntryPointCode = m_precompiledCode.data();
+    }
 
     m_id = device->m_nextShaderProgramID.fetch_add(1);
 
@@ -49,6 +67,11 @@ IShaderProgram* ShaderProgram::getInterface(const Guid& guid)
 
 Result ShaderProgram::init()
 {
+    if ((m_desc.precompiledEntryPointCode == nullptr) != (m_desc.precompiledEntryPointCodeCount == 0))
+        return SLANG_E_INVALID_ARG;
+    for (uint32_t i = 0; i < m_desc.precompiledEntryPointCodeCount; ++i)
+        if (!m_desc.precompiledEntryPointCode[i].data || m_desc.precompiledEntryPointCode[i].size == 0)
+            return SLANG_E_INVALID_ARG;
     slangGlobalScope = m_desc.slangGlobalScope;
     for (uint32_t i = 0; i < m_desc.slangEntryPointCount; i++)
     {
@@ -103,6 +126,8 @@ Result ShaderProgram::init()
     }
 
     m_isSpecializable = _isSpecializable();
+    if (m_desc.precompiledEntryPointCodeCount && m_isSpecializable)
+        return SLANG_E_INVALID_ARG;
 
     return SLANG_OK;
 }
@@ -120,11 +145,20 @@ Result ShaderProgram::compileShaders(Device* device)
     }
 
     // For a fully specialized program, read and store its kernel code in `shaderProgram`.
+    uint32_t precompiledIndex = 0;
     auto compileShader = [&](slang::EntryPointReflection* entryPointInfo,
                              slang::IComponentType* entryPointComponent,
                              uint32_t entryPointIndex)
     {
         ComPtr<ISlangBlob> kernelCode;
+        if (m_desc.precompiledEntryPointCodeCount)
+        {
+            if (precompiledIndex >= m_desc.precompiledEntryPointCodeCount)
+                return SLANG_E_INVALID_ARG;
+            const auto& code = m_desc.precompiledEntryPointCode[precompiledIndex++];
+            kernelCode = OwnedBlob::create(code.data, code.size);
+            return createShaderModule(entryPointInfo, kernelCode);
+        }
         ComPtr<ISlangBlob> diagnostics;
         auto compileResult = device->getEntryPointCodeFromShaderCache(
             this,
@@ -167,6 +201,8 @@ Result ShaderProgram::compileShaders(Device* device)
         }
     }
 
+    if (m_desc.precompiledEntryPointCodeCount && precompiledIndex != m_desc.precompiledEntryPointCodeCount)
+        return SLANG_E_INVALID_ARG;
     m_compiledShaders = true;
 
     return SLANG_OK;

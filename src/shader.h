@@ -43,6 +43,8 @@ public:
 
     ShaderProgramDesc m_desc;
     StructHolder m_descHolder;
+    std::vector<std::vector<uint8_t>> m_precompiledCodeStorage;
+    std::vector<ShaderEntryPointCode> m_precompiledCode;
 
     ShaderProgramID m_id;
 

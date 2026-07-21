@@ -269,6 +269,15 @@ enum class LinkingStyle
     SeparateEntryPointCompilation
 };
 
+/// Backend bytecode for one entry point, ordered exactly like the program's
+/// reflected entry points. When supplied, slang-rhi creates native shader
+/// modules from these bytes and does not invoke a downstream compiler.
+struct ShaderEntryPointCode
+{
+    const void* data = nullptr;
+    size_t size = 0;
+};
+
 struct ShaderProgramDesc
 {
     StructType type = StructType::ShaderProgramDesc;
@@ -289,6 +298,12 @@ struct ShaderProgramDesc
     // If set to 0, then `slangGlobalScope` must contain Slang EntryPoint components.
     // If not 0, then `slangGlobalScope` must not contain any EntryPoint components.
     uint32_t slangEntryPointCount = 0;
+
+    // Optional precompiled backend bytecode, one item per reflected entry
+    // point in the same order as slangEntryPoints (or slangGlobalScope when
+    // slangEntryPointCount is zero). The data is copied by createShaderProgram.
+    const ShaderEntryPointCode* precompiledEntryPointCode = nullptr;
+    uint32_t precompiledEntryPointCodeCount = 0;
 
     const char* label = nullptr;
 };
