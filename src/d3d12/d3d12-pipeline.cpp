@@ -425,8 +425,11 @@ Result DeviceImpl::createRenderPipeline2(const RenderPipelineDesc& desc, IRender
                 else
 #endif // SLANG_RHI_ENABLE_NVAPI
                 {
-                    HRESULT hr = device->m_device->CreateGraphicsPipelineState(desc, IID_PPV_ARGS(outPipeline));
-                    return hr == S_OK ? SLANG_OK : SLANG_FAIL;
+                    SLANG_D3D_RETURN_ON_FAIL_REPORT(
+                        device->m_device->CreateGraphicsPipelineState(desc, IID_PPV_ARGS(outPipeline)),
+                        device
+                    );
+                    return SLANG_OK;
                 }
             },
             pipelineState.writeRef(),
