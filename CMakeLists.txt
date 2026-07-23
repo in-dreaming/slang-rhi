@@ -145,7 +145,7 @@ endif()
 
 # Fetch slang options
 option(SLANG_RHI_FETCH_SLANG "Fetch slang" ON)
-set(SLANG_RHI_FETCH_SLANG_VERSION "2026.4.1" CACHE STRING "Slang version to fetch")
+set(SLANG_RHI_FETCH_SLANG_VERSION "2026.8.1" CACHE STRING "Slang version to fetch")
 option(SLANG_RHI_FETCH_DXC "Fetch DirectXShaderCompiler for the D3D12 backend" ON)
 
 # slang-rhi depends on a few external libraries.
@@ -276,7 +276,8 @@ macro(copy_file IN_FILE OUT_DIR)
 
         if (UNIX)
             add_custom_command(
-                OUTPUT ${OUT_FILE_2} DEPENDS ${IN_FILE} ${ARGN}
+                OUTPUT ${OUT_FILE_2}
+                DEPENDS ${IN_FILE} ${CMAKE_BINARY_DIR}/CMakeCache.txt ${ARGN}
                 COMMAND ${CMAKE_COMMAND} -E copy ${IN_FILE} ${OUT_FILE_2}
                 COMMENT "Copying ${FILENAME}"
             )
@@ -285,7 +286,8 @@ macro(copy_file IN_FILE OUT_DIR)
             # add_custom_command does not support generator expressions in OUTPUT argument
             # make a dummy copy and then depend on that
             add_custom_command(
-                OUTPUT ${OUT_FILE_1} DEPENDS ${IN_FILE} ${ARGN}
+                OUTPUT ${OUT_FILE_1}
+                DEPENDS ${IN_FILE} ${CMAKE_BINARY_DIR}/CMakeCache.txt ${ARGN}
                 COMMAND ${CMAKE_COMMAND} -E copy ${IN_FILE} ${OUT_FILE_1}
                 COMMAND ${CMAKE_COMMAND} -E copy ${IN_FILE} ${OUT_FILE_2}
                 COMMENT "Copying ${FILENAME}"
@@ -304,18 +306,18 @@ if(SLANG_RHI_FETCH_SLANG)
     set(SLANG_VERSION ${SLANG_RHI_FETCH_SLANG_VERSION})
     set(SLANG_URL "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}")
     # Version string for which bundled hashes are provided; update together with the hashes below.
-    set(SLANG_HASH_VERSION "2026.4.1")
+    set(SLANG_HASH_VERSION "2026.8.1")
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         if(SLANG_RHI_ARCHITECTURE MATCHES "x86_64")
             set(SLANG_URL "${SLANG_URL}-windows-x86_64.zip")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=f964c0ccb53d8f2c308a08419093e9374e97bf07529e8b2cd02363adca08f0af")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=4cd6a06278b05433b09dfac3d733426e1e704967ca8529fc9e44f06deb5fcdd7")
             endif()
         elseif(SLANG_RHI_ARCHITECTURE MATCHES "aarch64|arm64")
             set(SLANG_URL "${SLANG_URL}-windows-aarch64.zip")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=91c4714e2b4eeeb21ea63296ba143ef750038368e54e5feb0b2dea471726fdef")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=4ef047cc471772630bb89dea363865fa971ece513631593410b289ed87022a7e")
             endif()
         else()
             message(FATAL_ERROR "Unsupported processor architecture (${SLANG_RHI_ARCHITECTURE}) for fetched Slang binaries")
@@ -324,12 +326,12 @@ if(SLANG_RHI_FETCH_SLANG)
         if(SLANG_RHI_ARCHITECTURE MATCHES "x86_64")
             set(SLANG_URL "${SLANG_URL}-linux-x86_64.tar.gz")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=bca3909c6f346c1298c504643f924d5a8eac14160af9a975183f53d06443fbb0")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=ad614368d43492676abdab0cccac651733622715800f004c026640122d208148")
             endif()
         elseif(SLANG_RHI_ARCHITECTURE MATCHES "aarch64|arm64")
             set(SLANG_URL "${SLANG_URL}-linux-aarch64.tar.gz")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=543f3a35d32fd2634d05ae9694e9df989ea09cc46591faa7405209e4f975318e")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=1ad71918d06b2c94c53a0930c30e3294e3718689ef1b267bd46a3db7198d7a3b")
             endif()
         else()
             message(FATAL_ERROR "Unsupported processor architecture (${SLANG_RHI_ARCHITECTURE}) for fetched Slang binaries")
@@ -338,12 +340,12 @@ if(SLANG_RHI_FETCH_SLANG)
         if(SLANG_RHI_ARCHITECTURE MATCHES "x86_64")
             set(SLANG_URL "${SLANG_URL}-macos-x86_64.zip")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=899e502fac7cc8c2b03da802b1919843856716277e6e208132799333692a7925")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=1ebce824ee9f757de3dbcc4a574b1ddb137136a086e0aaa77d928bbe073901fa")
             endif()
         elseif(SLANG_RHI_ARCHITECTURE MATCHES "aarch64|arm64")
             set(SLANG_URL "${SLANG_URL}-macos-aarch64.zip")
             if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-                set(SLANG_RHI_SLANG_URL_HASH "SHA256=23670f850799ac338e8d8d30406a5a4f78b3af6310c7072946143460453767af")
+                set(SLANG_RHI_SLANG_URL_HASH "SHA256=d953efb713e76b220f1a4ff1e23a96b9f564657d1701de184e5a52059bc62310")
             endif()
         else()
             message(FATAL_ERROR "Unsupported processor architecture (${SLANG_RHI_ARCHITECTURE}) for fetched Slang binaries")
@@ -351,7 +353,7 @@ if(SLANG_RHI_FETCH_SLANG)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
         set(SLANG_URL "${SLANG_URL}-wasm-libs.zip")
         if(SLANG_VERSION STREQUAL SLANG_HASH_VERSION)
-            set(SLANG_RHI_SLANG_URL_HASH "SHA256=43eb086360cd56fc245239bf788af887bebbb4dc6e79141b4afdcd994591d903")
+            set(SLANG_RHI_SLANG_URL_HASH "SHA256=a5142ae6691a0a6834d0bb173ecc140d6e65dfb59bb62023a2f7984cbbc1ac59")
         endif()
     endif()
 
@@ -1062,6 +1064,7 @@ if(SLANG_RHI_BUILD_TESTS AND NOT SLANG_RHI_BUILD_SHARED AND NOT EMSCRIPTEN)
         tests/test-resource-states.cpp
         # tests/test-root-mutable-shader-object.cpp
         tests/test-root-shader-parameter.cpp
+        tests/test-register-spaces.cpp
         tests/test-sampler-array.cpp
         tests/test-sampler.cpp
         tests/test-sha1.cpp
