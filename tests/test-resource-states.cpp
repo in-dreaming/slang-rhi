@@ -136,3 +136,22 @@ GPU_TEST_CASE("texture-resource-states", D3D12 | Vulkan)
         queue->waitOnHost();
     }
 }
+
+GPU_TEST_CASE("buffer-final-state-transition", D3D12)
+{
+    auto queue = device->getQueue(QueueType::Graphics);
+
+    BufferDesc bufferDesc = {};
+    bufferDesc.size = 256;
+    bufferDesc.usage = BufferUsage::UnorderedAccess | BufferUsage::CopySource;
+    bufferDesc.memoryType = MemoryType::DeviceLocal;
+    ComPtr<IBuffer> buffer;
+    REQUIRE_CALL(device->createBuffer(bufferDesc, nullptr, buffer.writeRef()));
+
+    auto commandEncoder = queue->createCommandEncoder();
+    commandEncoder->setBufferState(buffer, ResourceState::UnorderedAccess);
+    commandEncoder->globalBarrier();
+    commandEncoder->setBufferState(buffer, ResourceState::CopySource);
+    queue->submit(commandEncoder->finish());
+    queue->waitOnHost();
+}

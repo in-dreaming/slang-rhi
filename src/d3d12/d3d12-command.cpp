@@ -192,6 +192,10 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
     // COPY command lists only support copy states and UAV barriers.
     if (!m_isCopyCommandList)
     {
+        // Submit explicit end-of-stream transitions before restoring default
+        // states. Combining both directions in one ResourceBarrier call is
+        // invalid when they target the same resource.
+        commitBarriers();
         m_stateTracking.requireDefaultStates();
         commitBarriers();
     }
@@ -1583,6 +1587,11 @@ void CommandRecorder::cmdGlobalBarrier(const commands::GlobalBarrier& cmd)
     (void)cmd;
     if (m_isCopyCommandList)
         return;
+
+    // Preserve command-stream ordering. State transitions recorded before the
+    // global barrier must be submitted before later commands can enqueue
+    // transitions for the same resource.
+    commitBarriers();
 
     // Global barrier on D3D12 is implemented with a UAV barrier pointing at null resource.
     // https://learn.microsoft.com/en-us/windows/win32/direct3d12/using-resource-barriers-to-synchronize-resource-states-in-direct3d-12
