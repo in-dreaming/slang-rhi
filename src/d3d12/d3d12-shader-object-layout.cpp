@@ -735,6 +735,11 @@ void RootShaderObjectLayoutImpl::RootSignatureDescBuilder::addAsValue(
 
             BindingRegisterOffset elementOffset = subObjectRangeElementOffset;
             elementOffset += BindingRegisterOffset(elementVarLayout);
+            const auto constantBufferSpace =
+                typeLayout->getSubObjectRangeOffset(subObjectRangeIndex)
+                    ->getBindingSpace(SLANG_PARAMETER_CATEGORY_CONSTANT_BUFFER);
+            SLANG_RHI_ASSERT(constantBufferSpace != SLANG_UNKNOWN_SIZE);
+            elementOffset.spaceOffset += uint32_t(constantBufferSpace);
 
             addAsConstantBuffer(elementTypeLayout, physicalDescriptorSetIndex, containerOffset, elementOffset);
             break;
