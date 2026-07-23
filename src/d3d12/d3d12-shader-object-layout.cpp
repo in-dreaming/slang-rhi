@@ -553,7 +553,7 @@ Result RootShaderObjectLayoutImpl::RootSignatureDescBuilder::addDescriptorRange(
         physicalDescriptorSetIndex,
         rangeType,
         (UINT)index + elementOffset[rangeType],
-        (UINT)space + elementOffset.spaceOffset,
+        (UINT)space + containerOffset.spaceOffset,
         (UINT)count,
         isRootParameter
     );
