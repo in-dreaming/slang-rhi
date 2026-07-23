@@ -301,7 +301,9 @@ struct ShaderProgramDesc
 
     // Optional precompiled backend bytecode, one item per reflected entry
     // point in the same order as slangEntryPoints (or slangGlobalScope when
-    // slangEntryPointCount is zero). The data is copied by createShaderProgram.
+    // slangEntryPointCount is zero). The code must already represent the final
+    // specialization; supplying it disables runtime program specialization.
+    // The data is copied by createShaderProgram.
     const ShaderEntryPointCode* precompiledEntryPointCode = nullptr;
     uint32_t precompiledEntryPointCodeCount = 0;
 

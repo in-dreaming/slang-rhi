@@ -125,9 +125,11 @@ Result ShaderProgram::init()
         linkedProgram = m_desc.slangGlobalScope;
     }
 
-    m_isSpecializable = _isSpecializable();
-    if (m_desc.precompiledEntryPointCodeCount && m_isSpecializable)
-        return SLANG_E_INVALID_ARG;
+    // Precompiled code is the caller-selected final specialization. Attempting
+    // runtime specialization would compile replacement kernels and silently
+    // discard the provided backend bytecode.
+    m_isSpecializable =
+        m_desc.precompiledEntryPointCodeCount == 0 && _isSpecializable();
 
     return SLANG_OK;
 }
