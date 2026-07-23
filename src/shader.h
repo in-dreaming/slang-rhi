@@ -86,11 +86,15 @@ public:
 private:
     bool _isSpecializable()
     {
-        if (slangGlobalScope->getSpecializationParamCount() != 0)
+        // Composition/linking resolves concrete generic resource types such as
+        // StructuredBuffer<UserStruct>. Inspecting the input module and entry
+        // points here incorrectly classifies those fully linked programs as
+        // requiring runtime specialization and rejects valid precompiled code.
+        if (linkedProgram && linkedProgram->getSpecializationParamCount() != 0)
         {
             return true;
         }
-        for (auto& entryPoint : slangEntryPoints)
+        for (auto& entryPoint : linkedEntryPoints)
         {
             if (entryPoint->getSpecializationParamCount() != 0)
             {
