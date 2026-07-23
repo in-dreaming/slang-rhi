@@ -31,6 +31,7 @@ public:
     VulkanApi& m_api;
 
     VkCommandBuffer m_cmdBuffer;
+    VkPipelineStageFlags m_supportedShaderStageFlags = 0;
 
     StateTracking m_stateTracking;
 
@@ -137,6 +138,10 @@ public:
 Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
 {
     m_cmdBuffer = commandBuffer->m_commandBuffer;
+    m_supportedShaderStageFlags =
+        commandBuffer->m_queue->getType() == QueueType::Compute
+            ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            : m_api.m_supportedShaderStageFlags;
 
 #if SLANG_RHI_ENABLE_AFTERMATH
     // Enable aftermath marker tracking if aftermath is enabled and extension is available.
@@ -1676,6 +1681,15 @@ void CommandRecorder::commitBarriers()
 
     VkPipelineStageFlags activeBeforeStageFlags = VkPipelineStageFlags(0);
     VkPipelineStageFlags activeAfterStageFlags = VkPipelineStageFlags(0);
+    auto accessFlags = [&](ResourceState state)
+    {
+        if (m_supportedShaderStageFlags == VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT &&
+            state == ResourceState::ShaderResource)
+        {
+            return VkAccessFlags(VK_ACCESS_SHADER_READ_BIT);
+        }
+        return VkAccessFlags(calcAccessFlags(state));
+    };
 
     auto submitBufferBarriers = [&]()
     {
@@ -1714,9 +1728,9 @@ void CommandRecorder::commitBarriers()
         BufferImpl* buffer = checked_cast<BufferImpl*>(bufferBarrier.buffer);
 
         VkPipelineStageFlags beforeStageFlags =
-            calcPipelineStageFlags(m_api.m_supportedShaderStageFlags, bufferBarrier.stateBefore, true);
+            calcPipelineStageFlags(m_supportedShaderStageFlags, bufferBarrier.stateBefore, true);
         VkPipelineStageFlags afterStageFlags =
-            calcPipelineStageFlags(m_api.m_supportedShaderStageFlags, bufferBarrier.stateAfter, false);
+            calcPipelineStageFlags(m_supportedShaderStageFlags, bufferBarrier.stateAfter, false);
 
         if ((beforeStageFlags != activeBeforeStageFlags || afterStageFlags != activeAfterStageFlags) &&
             !bufferBarriers.empty())
@@ -1730,8 +1744,8 @@ void CommandRecorder::commitBarriers()
 
         VkBufferMemoryBarrier barrier = {};
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        barrier.srcAccessMask = calcAccessFlags(bufferBarrier.stateBefore);
-        barrier.dstAccessMask = calcAccessFlags(bufferBarrier.stateAfter);
+        barrier.srcAccessMask = accessFlags(bufferBarrier.stateBefore);
+        barrier.dstAccessMask = accessFlags(bufferBarrier.stateAfter);
         barrier.buffer = buffer->m_buffer.m_buffer;
         barrier.offset = 0;
         barrier.size = buffer->m_desc.size;
@@ -1751,9 +1765,9 @@ void CommandRecorder::commitBarriers()
         TextureImpl* texture = checked_cast<TextureImpl*>(textureBarrier.texture);
 
         VkPipelineStageFlags beforeStageFlags =
-            calcPipelineStageFlags(m_api.m_supportedShaderStageFlags, textureBarrier.stateBefore, true);
+            calcPipelineStageFlags(m_supportedShaderStageFlags, textureBarrier.stateBefore, true);
         VkPipelineStageFlags afterStageFlags =
-            calcPipelineStageFlags(m_api.m_supportedShaderStageFlags, textureBarrier.stateAfter, false);
+            calcPipelineStageFlags(m_supportedShaderStageFlags, textureBarrier.stateAfter, false);
 
         if ((beforeStageFlags != activeBeforeStageFlags || afterStageFlags != activeAfterStageFlags) &&
             !imageBarriers.empty())
@@ -1784,8 +1798,8 @@ void CommandRecorder::commitBarriers()
         barrier.subresourceRange.baseMipLevel = textureBarrier.entireTexture ? 0 : textureBarrier.mip;
         barrier.subresourceRange.layerCount = textureBarrier.entireTexture ? VK_REMAINING_ARRAY_LAYERS : 1;
         barrier.subresourceRange.levelCount = textureBarrier.entireTexture ? VK_REMAINING_MIP_LEVELS : 1;
-        barrier.srcAccessMask = calcAccessFlags(textureBarrier.stateBefore);
-        barrier.dstAccessMask = calcAccessFlags(textureBarrier.stateAfter);
+        barrier.srcAccessMask = accessFlags(textureBarrier.stateBefore);
+        barrier.dstAccessMask = accessFlags(textureBarrier.stateAfter);
         imageBarriers.push_back(barrier);
     }
     if (!imageBarriers.empty())
