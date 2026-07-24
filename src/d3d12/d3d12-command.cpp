@@ -1575,11 +1575,16 @@ void CommandRecorder::cmdConvertCooperativeVectorMatrix(const commands::ConvertC
 void CommandRecorder::cmdSetBufferState(const commands::SetBufferState& cmd)
 {
     m_stateTracking.setBufferState(checked_cast<BufferImpl*>(cmd.buffer), cmd.state);
+    // An explicit state command is an ordering point in the recorded stream.
+    // Flush it before a later explicit command can enqueue another transition
+    // for the same resource into the same ResourceBarrier call.
+    commitBarriers();
 }
 
 void CommandRecorder::cmdSetTextureState(const commands::SetTextureState& cmd)
 {
     m_stateTracking.setTextureState(checked_cast<TextureImpl*>(cmd.texture), cmd.subresourceRange, cmd.state);
+    commitBarriers();
 }
 
 void CommandRecorder::cmdGlobalBarrier(const commands::GlobalBarrier& cmd)

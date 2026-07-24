@@ -155,3 +155,24 @@ GPU_TEST_CASE("buffer-final-state-transition", D3D12)
     queue->submit(commandEncoder->finish());
     queue->waitOnHost();
 }
+
+GPU_TEST_CASE("ordered-explicit-resource-states", D3D12)
+{
+    auto queue = device->getQueue(QueueType::Graphics);
+
+    TextureDesc textureDesc = {};
+    textureDesc.type = TextureType::Texture2D;
+    textureDesc.size = {4, 4, 1};
+    textureDesc.format = Format::R32Uint;
+    textureDesc.usage = TextureUsage::RenderTarget | TextureUsage::CopySource | TextureUsage::UnorderedAccess;
+    textureDesc.defaultState = ResourceState::RenderTarget;
+    ComPtr<ITexture> texture;
+    REQUIRE_CALL(device->createTexture(textureDesc, nullptr, texture.writeRef()));
+
+    auto commandEncoder = queue->createCommandEncoder();
+    commandEncoder->setTextureState(texture, ResourceState::UnorderedAccess);
+    commandEncoder->setTextureState(texture, ResourceState::CopySource);
+    commandEncoder->setTextureState(texture, ResourceState::RenderTarget);
+    queue->submit(commandEncoder->finish());
+    queue->waitOnHost();
+}
