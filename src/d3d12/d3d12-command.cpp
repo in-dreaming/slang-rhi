@@ -67,6 +67,7 @@ public:
 
     BindingDataImpl* m_bindingData = nullptr;
     bool m_isCopyCommandList = false;
+    bool m_isComputeCommandList = false;
 
 #if SLANG_RHI_ENABLE_AFTERMATH
     GFSDK_Aftermath_ContextHandle m_aftermathContext = nullptr;
@@ -150,8 +151,10 @@ Result CommandRecorder::record(CommandBufferImpl* commandBuffer)
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList1>(m_cmdList1.writeRef());
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList4>(m_cmdList4.writeRef());
     m_cmdList->QueryInterface<ID3D12GraphicsCommandList6>(m_cmdList6.writeRef());
-    m_isCopyCommandList =
-        getD3D12CommandListType(commandBuffer->m_queue->m_type) == D3D12_COMMAND_LIST_TYPE_COPY;
+    const D3D12_COMMAND_LIST_TYPE commandListType =
+        getD3D12CommandListType(commandBuffer->m_queue->m_type);
+    m_isCopyCommandList = commandListType == D3D12_COMMAND_LIST_TYPE_COPY;
+    m_isComputeCommandList = commandListType == D3D12_COMMAND_LIST_TYPE_COMPUTE;
     if (!m_isCopyCommandList)
     {
         m_cbvSrvUavArena = &commandBuffer->m_cbvSrvUavArena;
@@ -1770,6 +1773,11 @@ void CommandRecorder::commitBarriers()
         D3D12_RESOURCE_BARRIER barrier = {};
         D3D12_RESOURCE_STATES stateBefore = translateResourceState(bufferBarrier.stateBefore);
         D3D12_RESOURCE_STATES stateAfter = translateResourceState(bufferBarrier.stateAfter);
+        if (m_isComputeCommandList)
+        {
+            stateBefore &= ~D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            stateAfter &= ~D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        }
         // Acceleration structure buffers need to be treated specially.
         // D3D12 doesn't allow to transition to/from D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE state.
         // Instead, UAV barriers are used to synchronize accesses.
@@ -1802,6 +1810,11 @@ void CommandRecorder::commitBarriers()
         D3D12_RESOURCE_BARRIER barrier = {};
         D3D12_RESOURCE_STATES stateBefore = translateResourceState(textureBarrier.stateBefore);
         D3D12_RESOURCE_STATES stateAfter = translateResourceState(textureBarrier.stateAfter);
+        if (m_isComputeCommandList)
+        {
+            stateBefore &= ~D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+            stateAfter &= ~D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
+        }
         if (stateBefore != stateAfter)
         {
             barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

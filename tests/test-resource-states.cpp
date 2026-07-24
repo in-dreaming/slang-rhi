@@ -176,3 +176,28 @@ GPU_TEST_CASE("ordered-explicit-resource-states", D3D12)
     queue->submit(commandEncoder->finish());
     queue->waitOnHost();
 }
+
+GPU_TEST_CASE("compute-queue-shader-resource-state", D3D12)
+{
+    auto graphicsQueue = device->getQueue(QueueType::Graphics);
+    auto computeQueue = device->getQueue(QueueType::Compute);
+
+    TextureDesc textureDesc = {};
+    textureDesc.type = TextureType::Texture2D;
+    textureDesc.size = {4, 4, 1};
+    textureDesc.format = Format::RGBA8Unorm;
+    textureDesc.usage = TextureUsage::RenderTarget | TextureUsage::ShaderResource;
+    textureDesc.defaultState = ResourceState::General;
+    ComPtr<ITexture> texture;
+    REQUIRE_CALL(device->createTexture(textureDesc, nullptr, texture.writeRef()));
+
+    auto graphicsEncoder = graphicsQueue->createCommandEncoder();
+    graphicsEncoder->setTextureState(texture, ResourceState::RenderTarget);
+    graphicsQueue->submit(graphicsEncoder->finish());
+    graphicsQueue->waitOnHost();
+
+    auto computeEncoder = computeQueue->createCommandEncoder();
+    computeEncoder->setTextureState(texture, ResourceState::ShaderResource);
+    computeQueue->submit(computeEncoder->finish());
+    computeQueue->waitOnHost();
+}
