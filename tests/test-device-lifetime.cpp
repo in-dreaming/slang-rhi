@@ -78,3 +78,57 @@ GPU_TEST_CASE("device-lifetime", ALL | DontCreateDevice)
     CHECK(devicePtr->getReferenceCount() == deviceRefCountBuffer - 1);
     buffer.setNull();
 }
+
+GPU_TEST_CASE("multi-queue-device-lifetime", D3D12 | DontCreateDevice)
+{
+    DeviceDesc deviceDesc = {};
+    deviceDesc.deviceType = ctx->deviceType;
+    deviceDesc.adapter = getSelectedDeviceAdapter(ctx->deviceType);
+    ComPtr<IDevice> testDevice;
+    REQUIRE_CALL(getRHI()->createDevice(deviceDesc, testDevice.writeRef()));
+
+    static constexpr const char* source = R"(
+        RWStructuredBuffer<float> buffer;
+        float value;
+        [shader("compute")]
+        [numthreads(1, 1, 1)]
+        void computeMain(uint3 id : SV_DispatchThreadID)
+        {
+            buffer[id.x] = value;
+        }
+    )";
+    ComPtr<IShaderProgram> shaderProgram;
+    REQUIRE_CALL(loadComputeProgramFromSource(
+        testDevice, source, shaderProgram.writeRef()));
+    ComputePipelineDesc pipelineDesc = {};
+    pipelineDesc.program = shaderProgram;
+    ComPtr<IComputePipeline> pipeline;
+    REQUIRE_CALL(testDevice->createComputePipeline(pipelineDesc, pipeline.writeRef()));
+
+    BufferDesc bufferDesc = {};
+    bufferDesc.size = 4 * sizeof(float);
+    bufferDesc.elementSize = sizeof(float);
+    bufferDesc.usage = BufferUsage::ShaderResource | BufferUsage::UnorderedAccess;
+    bufferDesc.defaultState = ResourceState::UnorderedAccess;
+    ComPtr<IBuffer> buffer;
+    REQUIRE_CALL(testDevice->createBuffer(bufferDesc, nullptr, buffer.writeRef()));
+
+    {
+        auto queue = testDevice->getQueue(QueueType::Compute);
+        auto commandEncoder = queue->createCommandEncoder();
+        auto passEncoder = commandEncoder->beginComputePass();
+        auto rootObject = passEncoder->bindPipeline(pipeline);
+        ShaderCursor cursor(rootObject);
+        cursor["buffer"].setBinding(buffer);
+        cursor["value"].setData(1.0f);
+        passEncoder->dispatchCompute(1, 1, 1);
+        passEncoder->end();
+        queue->submit(commandEncoder->finish());
+        queue->waitOnHost();
+    }
+
+    buffer.setNull();
+    pipeline.setNull();
+    shaderProgram.setNull();
+    testDevice.setNull();
+}

@@ -2263,20 +2263,22 @@ DeviceImpl::~DeviceImpl()
     m_uploadHeap.release();
     m_readbackHeap.release();
 
-    if (m_queue)
+    if (m_transferQueue)
     {
-        m_queue->shutdown();
-        m_queue.setNull();
+        m_transferQueue->shutdown();
+        m_transferQueue.setNull();
     }
     if (m_computeQueue)
     {
         m_computeQueue->shutdown();
         m_computeQueue.setNull();
     }
-    if (m_transferQueue)
+    // Resource destruction from auxiliary command-buffer pools defers through
+    // the graphics queue, so it must remain alive and shut down last.
+    if (m_queue)
     {
-        m_transferQueue->shutdown();
-        m_transferQueue.setNull();
+        m_queue->shutdown();
+        m_queue.setNull();
     }
 
     m_bindlessDescriptorSet.setNull();
