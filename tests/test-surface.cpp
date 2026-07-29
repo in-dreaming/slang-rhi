@@ -317,6 +317,11 @@ struct NoRenderSurfaceTest : SurfaceTest
     void renderFrame(ITexture* texture, uint32_t width, uint32_t height, uint32_t frameIndex) override {}
 };
 
+struct BGRANoRenderSurfaceTest : NoRenderSurfaceTest
+{
+    Format getSurfaceFormat() override { return Format::BGRA8UnormSrgb; }
+};
+
 template<typename Test>
 void testSurface(IDevice* device)
 {
@@ -359,5 +364,11 @@ GPU_TEST_CASE("surface-no-render", D3D11 | D3D12 | Vulkan | Metal | CUDA)
     }
     CHECK(device->hasFeature(Feature::Surface));
     testSurface<NoRenderSurfaceTest>(device);
+}
+
+GPU_TEST_CASE("surface-bgra", D3D11 | D3D12)
+{
+    CHECK(device->hasFeature(Feature::Surface));
+    testSurface<BGRANoRenderSurfaceTest>(device);
 }
 #endif // SLANG_RHI_BUILD_TESTS_WITH_GLFW
